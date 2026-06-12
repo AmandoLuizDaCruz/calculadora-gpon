@@ -1,5 +1,6 @@
 package service;
 
+import model.ParametroCalculavel;
 import model.ProjetoPON;
 import model.ResultadoValidacao;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,6 +15,15 @@ class ValidacaoServiceTest {
     @BeforeEach
     void configurar() {
         service = new ValidacaoService();
+    }
+
+    @Test
+    void deveRejeitarProjetoNulo() {
+        ResultadoValidacao resultado =
+                service.validar(null);
+
+        assertFalse(resultado.isValido());
+        assertFalse(resultado.getErros().isEmpty());
     }
 
     @Test
@@ -49,6 +59,22 @@ class ValidacaoServiceTest {
     }
 
     @Test
+    void deveRejeitarTodosOsCamposVazios() {
+        ProjetoPON projeto = new ProjetoPON();
+
+        ResultadoValidacao resultado =
+                service.validar(projeto);
+
+        assertFalse(resultado.isValido());
+
+        assertTrue(
+                resultado.getErros()
+                        .get(0)
+                        .contains("8 parâmetros vazios")
+        );
+    }
+
+    @Test
     void deveRejeitarAtenuacaoNegativa() {
         ProjetoPON projeto = criarProjetoValido();
         projeto.setAtenuacaoFibra(-0.35);
@@ -80,6 +106,52 @@ class ValidacaoServiceTest {
 
         assertTrue(resultado.isValido());
         assertFalse(resultado.getAlertas().isEmpty());
+    }
+
+    @Test
+    void deveRejeitarSensibilidadeForaDoLimiteFisico() {
+        ProjetoPON projeto = criarProjetoValido();
+        projeto.setSensibilidadeReceptor(-100.0);
+
+        ResultadoValidacao resultado =
+                service.validar(projeto);
+
+        assertFalse(resultado.isValido());
+    }
+
+    @Test
+    void deveAlertarMargemForaDoConvencional() {
+        ProjetoPON projeto = criarProjetoValido();
+        projeto.setMargemDeSeguranca(15.0);
+
+        ResultadoValidacao resultado =
+                service.validar(projeto);
+
+        assertTrue(resultado.isValido());
+        assertFalse(resultado.getAlertas().isEmpty());
+    }
+
+    @Test
+    void deveAlertarQuantidadeCalculadaFracionaria() {
+        ResultadoValidacao resultado =
+                service.validarValorCalculado(
+                        ParametroCalculavel.NUMERO_CONECTORES,
+                        7.43
+                );
+
+        assertTrue(resultado.isValido());
+        assertFalse(resultado.getAlertas().isEmpty());
+    }
+
+    @Test
+    void deveRejeitarResultadoCalculadoInfinito() {
+        ResultadoValidacao resultado =
+                service.validarValorCalculado(
+                        ParametroCalculavel.COMPRIMENTO_FIBRA,
+                        Double.POSITIVE_INFINITY
+                );
+
+        assertFalse(resultado.isValido());
     }
 
     private ProjetoPON criarProjetoValido() {

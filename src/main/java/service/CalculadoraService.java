@@ -1,5 +1,6 @@
 package service;
 
+import model.LimitesPON;
 import model.ParametroCalculavel;
 import model.ProjetoPON;
 import model.ResultadoCalculo;
@@ -10,11 +11,13 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Executa os cálculos de orçamento de potência da rede PON.
+ * Executa os cálculos do orçamento de potência
+ * de uma rede óptica passiva PON.
  */
 public class CalculadoraService {
 
-    private static final double EPSILON = 0.000000001;
+    private static final Locale LOCALE_BR =
+            Locale.forLanguageTag("pt-BR");
 
     private final ValidacaoService validacaoService;
 
@@ -27,15 +30,8 @@ public class CalculadoraService {
                 validacaoService.validar(projeto);
 
         if (!validacao.isValido()) {
-            String mensagem =
-                    "DADOS INVÁLIDOS OU INSUFICIENTES\n\n"
-                            + String.join(
-                            "\n",
-                            validacao.getErros()
-                    );
-
             return ResultadoCalculo.erro(
-                    mensagem,
+                    montarMensagemDeErros(validacao),
                     validacao.getAlertas()
             );
         }
@@ -57,13 +53,10 @@ public class CalculadoraService {
             ProjetoPON projeto,
             List<String> alertasRecebidos
     ) {
-        double perdaFibra =
-                projeto.getAtenuacaoFibra()
-                        * projeto.getComprimentoFibra();
+        double perdaFibra = calcularPerdaFibra(projeto);
 
         double perdaConectores =
-                projeto.getPerdaPorConector()
-                        * projeto.getNumeroDeConectores();
+                calcularPerdasConectores(projeto);
 
         double perdaSplitters =
                 projeto.getPerdaPorSplitter();
@@ -89,34 +82,53 @@ public class CalculadoraService {
                 ? "PROJETO VIÁVEL"
                 : "PROJETO INVIÁVEL";
 
-        String mensagem = String.format(
-                Locale.US,
-                """
-                ANÁLISE COMPLETA DO PROJETO
+        String formula =
+                "Prx = Ptx - [(α × L) + (Pc × Nc) + Ps]";
 
-                Perda na fibra: %.2f dB
-                Perda nos conectores: %.2f dB
-                Perda nos splitters: %.2f dB
+        String substituicao = String.format(
+                LOCALE_BR,
+                "Prx = %s - [(%s × %s) + (%s × %d) + %s]",
+                formatar(projeto.getPotenciaTransmissao()),
+                formatar(projeto.getAtenuacaoFibra()),
+                formatar(projeto.getComprimentoFibra()),
+                formatar(projeto.getPerdaPorConector()),
+                projeto.getNumeroDeConectores(),
+                formatar(projeto.getPerdaPorSplitter())
+        );
 
-                Perdas físicas totais: %.2f dB
-                Potência estimada na recepção: %.2f dBm
-                Sensibilidade do receptor: %.2f dBm
-
-                Margem disponível: %.2f dB
-                Margem de segurança exigida: %.2f dB
-
-                RESULTADO: %s
-                """,
-                perdaFibra,
-                perdaConectores,
-                perdaSplitters,
-                perdasFisicas,
-                potenciaRecebida,
-                projeto.getSensibilidadeReceptor(),
-                margemDisponivel,
-                projeto.getMargemDeSeguranca(),
-                conclusao
-        ).replace(".", ",");
+        String mensagem =
+                "ANÁLISE COMPLETA DO PROJETO\n\n"
+                        + "Fórmula da potência recebida:\n"
+                        + formula
+                        + "\n\nSubstituição:\n"
+                        + substituicao
+                        + "\n\nDETALHAMENTO DAS PERDAS\n\n"
+                        + "Perda na fibra: "
+                        + formatar(perdaFibra)
+                        + " dB\n"
+                        + "Perda nos conectores: "
+                        + formatar(perdaConectores)
+                        + " dB\n"
+                        + "Perda nos splitters: "
+                        + formatar(perdaSplitters)
+                        + " dB\n"
+                        + "Perdas físicas totais: "
+                        + formatar(perdasFisicas)
+                        + " dB\n\n"
+                        + "Potência estimada na recepção: "
+                        + formatar(potenciaRecebida)
+                        + " dBm\n"
+                        + "Sensibilidade do receptor: "
+                        + formatar(projeto.getSensibilidadeReceptor())
+                        + " dBm\n"
+                        + "Margem disponível: "
+                        + formatar(margemDisponivel)
+                        + " dB\n"
+                        + "Margem de segurança exigida: "
+                        + formatar(projeto.getMargemDeSeguranca())
+                        + " dB\n\n"
+                        + "RESULTADO: "
+                        + conclusao;
 
         return ResultadoCalculo.analiseCompleta(
                 projetoViavel,
@@ -138,10 +150,10 @@ public class CalculadoraService {
         ParametroCalculavel parametro =
                 projeto.identificarParametroAusente();
 
-        double valorCalculado;
+        double resultadoMatematico;
 
         try {
-            valorCalculado = switch (parametro) {
+            resultadoMatematico = switch (parametro) {
                 case POTENCIA_TRANSMISSAO ->
                         calcularPotenciaTransmissao(projeto);
 
@@ -167,7 +179,7 @@ public class CalculadoraService {
                         calcularMargemSeguranca(projeto);
 
                 case NENHUM ->
-                        throw new IllegalStateException(
+                        throw new IllegalArgumentException(
                                 "Nenhum parâmetro ausente foi identificado."
                         );
             };
@@ -179,70 +191,98 @@ public class CalculadoraService {
             );
         }
 
-        if (!Double.isFinite(valorCalculado)) {
-            return ResultadoCalculo.erro(
-                    "O resultado do cálculo não é um número válido.",
-                    alertasRecebidos
-            );
-        }
+        resultadoMatematico =
+                normalizarValorProximoDeZero(
+                        resultadoMatematico
+                );
 
-        if (deveSerNaoNegativo(parametro)
-                && valorCalculado < 0) {
-            return ResultadoCalculo.erro(
-                    "O cálculo resultou em um valor negativo para "
-                            + parametro.getDescricao()
-                            + ". Os parâmetros informados são inconsistentes.",
-                    alertasRecebidos
-            );
-        }
+        ResultadoValidacao validacaoResultado =
+                validacaoService.validarValorCalculado(
+                        parametro,
+                        resultadoMatematico
+                );
 
-        List<String> alertas =
-                new ArrayList<>(alertasRecebidos);
-
-        adicionarAlertaResultado(
-                parametro,
-                valorCalculado,
-                alertas
+        List<String> alertas = new ArrayList<>(
+                alertasRecebidos
         );
 
-        String observacao = "";
+        alertas.addAll(
+                validacaoResultado.getAlertas()
+        );
+
+        if (!validacaoResultado.isValido()) {
+            return ResultadoCalculo.erro(
+                    "RESULTADO INCONSISTENTE\n\n"
+                            + String.join(
+                            "\n",
+                            validacaoResultado.getErros()
+                    ),
+                    alertas
+            );
+        }
+
+        DetalheFormula detalhe =
+                montarDetalheFormula(
+                        parametro,
+                        projeto
+                );
+
+        double valorApresentado = resultadoMatematico;
+
+        String blocoResultado;
 
         if (parametro
                 == ParametroCalculavel.NUMERO_CONECTORES) {
-            double valorArredondado =
-                    Math.rint(valorCalculado);
+            int quantidadeMaxima = (int) Math.floor(
+                    resultadoMatematico
+                            + LimitesPON.EPSILON
+            );
 
-            if (Math.abs(valorCalculado - valorArredondado)
-                    > 0.0001) {
-                observacao =
-                        "\n\nA quantidade calculada não é inteira. "
-                                + "Na aplicação prática, escolha uma "
-                                + "quantidade inteira e execute novamente a análise.";
-            }
+            valorApresentado = quantidadeMaxima;
+
+            blocoResultado =
+                    "Resultado matemático: "
+                            + formatar(resultadoMatematico)
+                            + " conectores\n"
+                            + "Quantidade máxima recomendada: "
+                            + quantidadeMaxima
+                            + " conectores";
+        } else {
+            blocoResultado =
+                    "Resultado: "
+                            + formatar(resultadoMatematico)
+                            + " "
+                            + parametro.getUnidade();
         }
 
-        String mensagem = String.format(
-                Locale.US,
-                """
-                VARIÁVEL CALCULADA
-
-                Parâmetro: %s
-                Valor estimado: %.2f %s
-
-                O valor foi determinado a partir dos demais
-                parâmetros informados pelo usuário.%s
-                """,
-                parametro.getDescricao(),
-                valorCalculado,
-                parametro.getUnidade(),
-                observacao
-        ).replace(".", ",");
+        String mensagem =
+                "VARIÁVEL CALCULADA\n\n"
+                        + "Parâmetro: "
+                        + parametro.getDescricao()
+                        + "\n\nFórmula:\n"
+                        + detalhe.formula()
+                        + "\n\nSubstituição:\n"
+                        + detalhe.substituicao()
+                        + "\n\n"
+                        + blocoResultado
+                        + "\n\nO valor foi determinado a partir "
+                        + "dos demais parâmetros informados.";
 
         return ResultadoCalculo.variavelCalculada(
                 parametro,
-                valorCalculado,
+                valorApresentado,
                 mensagem,
                 alertas
+        );
+    }
+
+    private String montarMensagemDeErros(
+            ResultadoValidacao validacao
+    ) {
+        return "DADOS INVÁLIDOS OU INSUFICIENTES\n\n"
+                + String.join(
+                "\n",
+                validacao.getErros()
         );
     }
 
@@ -267,17 +307,18 @@ public class CalculadoraService {
     ) {
         validarDivisor(
                 projeto.getComprimentoFibra(),
-                "O comprimento da fibra deve ser maior que zero."
+                "O comprimento da fibra deve ser maior que zero "
+                        + "para calcular a atenuação."
         );
 
-        double perdasRestantes =
+        double perdasDisponiveis =
                 projeto.getPotenciaTransmissao()
                         - projeto.getSensibilidadeReceptor()
                         - calcularPerdasConectores(projeto)
                         - projeto.getPerdaPorSplitter()
                         - projeto.getMargemDeSeguranca();
 
-        return perdasRestantes
+        return perdasDisponiveis
                 / projeto.getComprimentoFibra();
     }
 
@@ -286,17 +327,18 @@ public class CalculadoraService {
     ) {
         validarDivisor(
                 projeto.getAtenuacaoFibra(),
-                "A atenuação da fibra deve ser maior que zero."
+                "A atenuação da fibra deve ser maior que zero "
+                        + "para calcular o comprimento."
         );
 
-        double perdasRestantes =
+        double perdasDisponiveis =
                 projeto.getPotenciaTransmissao()
                         - projeto.getSensibilidadeReceptor()
                         - calcularPerdasConectores(projeto)
                         - projeto.getPerdaPorSplitter()
                         - projeto.getMargemDeSeguranca();
 
-        return perdasRestantes
+        return perdasDisponiveis
                 / projeto.getAtenuacaoFibra();
     }
 
@@ -305,17 +347,18 @@ public class CalculadoraService {
     ) {
         validarDivisor(
                 projeto.getNumeroDeConectores(),
-                "A quantidade de conectores deve ser maior que zero."
+                "A quantidade de conectores deve ser maior que zero "
+                        + "para calcular a perda por conector."
         );
 
-        double perdasRestantes =
+        double perdasDisponiveis =
                 projeto.getPotenciaTransmissao()
                         - projeto.getSensibilidadeReceptor()
                         - calcularPerdaFibra(projeto)
                         - projeto.getPerdaPorSplitter()
                         - projeto.getMargemDeSeguranca();
 
-        return perdasRestantes
+        return perdasDisponiveis
                 / projeto.getNumeroDeConectores();
     }
 
@@ -324,17 +367,18 @@ public class CalculadoraService {
     ) {
         validarDivisor(
                 projeto.getPerdaPorConector(),
-                "A perda por conector deve ser maior que zero."
+                "A perda por conector deve ser maior que zero "
+                        + "para calcular a quantidade."
         );
 
-        double perdasRestantes =
+        double perdasDisponiveis =
                 projeto.getPotenciaTransmissao()
                         - projeto.getSensibilidadeReceptor()
                         - calcularPerdaFibra(projeto)
                         - projeto.getPerdaPorSplitter()
                         - projeto.getMargemDeSeguranca();
 
-        return perdasRestantes
+        return perdasDisponiveis
                 / projeto.getPerdaPorConector();
     }
 
@@ -382,97 +426,196 @@ public class CalculadoraService {
             double divisor,
             String mensagem
     ) {
-        if (Math.abs(divisor) < EPSILON) {
+        if (LimitesPON.aproximadamenteZero(divisor)) {
             throw new IllegalArgumentException(mensagem);
         }
     }
 
-    private boolean deveSerNaoNegativo(
-            ParametroCalculavel parametro
+    private double normalizarValorProximoDeZero(
+            double valor
     ) {
-        return parametro
-                != ParametroCalculavel.POTENCIA_TRANSMISSAO
-                && parametro
-                != ParametroCalculavel.SENSIBILIDADE_RECEPTOR;
+        if (LimitesPON.aproximadamenteZero(valor)) {
+            return 0.0;
+        }
+
+        return valor;
     }
 
-    private void adicionarAlertaResultado(
+    private DetalheFormula montarDetalheFormula(
             ParametroCalculavel parametro,
-            double valor,
-            List<String> alertas
+            ProjetoPON projeto
     ) {
-        switch (parametro) {
-            case POTENCIA_TRANSMISSAO -> {
-                if (valor < -10 || valor > 10) {
-                    alertas.add(
-                            "A potência de transmissão calculada está "
-                                    + "fora da faixa convencional."
+        return switch (parametro) {
+            case POTENCIA_TRANSMISSAO ->
+                    new DetalheFormula(
+                            "Ptx = Srx + (α × L) + (Pc × Nc) + Ps + M",
+                            "Ptx = "
+                                    + formatar(projeto.getSensibilidadeReceptor())
+                                    + " + ("
+                                    + formatar(projeto.getAtenuacaoFibra())
+                                    + " × "
+                                    + formatar(projeto.getComprimentoFibra())
+                                    + ") + ("
+                                    + formatar(projeto.getPerdaPorConector())
+                                    + " × "
+                                    + projeto.getNumeroDeConectores()
+                                    + ") + "
+                                    + formatar(projeto.getPerdaPorSplitter())
+                                    + " + "
+                                    + formatar(projeto.getMargemDeSeguranca())
                     );
-                }
-            }
 
-            case SENSIBILIDADE_RECEPTOR -> {
-                if (valor < -40 || valor > -10) {
-                    alertas.add(
-                            "A sensibilidade calculada está fora "
-                                    + "da faixa convencional."
+            case SENSIBILIDADE_RECEPTOR ->
+                    new DetalheFormula(
+                            "Srx = Ptx - (α × L) - (Pc × Nc) - Ps - M",
+                            "Srx = "
+                                    + formatar(projeto.getPotenciaTransmissao())
+                                    + " - ("
+                                    + formatar(projeto.getAtenuacaoFibra())
+                                    + " × "
+                                    + formatar(projeto.getComprimentoFibra())
+                                    + ") - ("
+                                    + formatar(projeto.getPerdaPorConector())
+                                    + " × "
+                                    + projeto.getNumeroDeConectores()
+                                    + ") - "
+                                    + formatar(projeto.getPerdaPorSplitter())
+                                    + " - "
+                                    + formatar(projeto.getMargemDeSeguranca())
                     );
-                }
-            }
 
-            case ATENUACAO_FIBRA -> {
-                if (valor < 0.1 || valor > 1.0) {
-                    alertas.add(
-                            "A atenuação calculada está fora "
-                                    + "da faixa convencional."
+            case ATENUACAO_FIBRA ->
+                    new DetalheFormula(
+                            "α = [Ptx - Srx - (Pc × Nc) - Ps - M] / L",
+                            "α = ["
+                                    + formatar(projeto.getPotenciaTransmissao())
+                                    + " - ("
+                                    + formatar(projeto.getSensibilidadeReceptor())
+                                    + ") - ("
+                                    + formatar(projeto.getPerdaPorConector())
+                                    + " × "
+                                    + projeto.getNumeroDeConectores()
+                                    + ") - "
+                                    + formatar(projeto.getPerdaPorSplitter())
+                                    + " - "
+                                    + formatar(projeto.getMargemDeSeguranca())
+                                    + "] / "
+                                    + formatar(projeto.getComprimentoFibra())
                     );
-                }
-            }
 
-            case COMPRIMENTO_FIBRA -> {
-                if (valor > 60) {
-                    alertas.add(
-                            "O comprimento calculado é superior a 60 km."
+            case COMPRIMENTO_FIBRA ->
+                    new DetalheFormula(
+                            "L = [Ptx - Srx - (Pc × Nc) - Ps - M] / α",
+                            "L = ["
+                                    + formatar(projeto.getPotenciaTransmissao())
+                                    + " - ("
+                                    + formatar(projeto.getSensibilidadeReceptor())
+                                    + ") - ("
+                                    + formatar(projeto.getPerdaPorConector())
+                                    + " × "
+                                    + projeto.getNumeroDeConectores()
+                                    + ") - "
+                                    + formatar(projeto.getPerdaPorSplitter())
+                                    + " - "
+                                    + formatar(projeto.getMargemDeSeguranca())
+                                    + "] / "
+                                    + formatar(projeto.getAtenuacaoFibra())
                     );
-                }
-            }
 
-            case PERDA_POR_CONECTOR -> {
-                if (valor > 2) {
-                    alertas.add(
-                            "A perda calculada por conector é superior a 2 dB."
+            case PERDA_POR_CONECTOR ->
+                    new DetalheFormula(
+                            "Pc = [Ptx - Srx - (α × L) - Ps - M] / Nc",
+                            "Pc = ["
+                                    + formatar(projeto.getPotenciaTransmissao())
+                                    + " - ("
+                                    + formatar(projeto.getSensibilidadeReceptor())
+                                    + ") - ("
+                                    + formatar(projeto.getAtenuacaoFibra())
+                                    + " × "
+                                    + formatar(projeto.getComprimentoFibra())
+                                    + ") - "
+                                    + formatar(projeto.getPerdaPorSplitter())
+                                    + " - "
+                                    + formatar(projeto.getMargemDeSeguranca())
+                                    + "] / "
+                                    + projeto.getNumeroDeConectores()
                     );
-                }
-            }
 
-            case NUMERO_CONECTORES -> {
-                if (valor > 24) {
-                    alertas.add(
-                            "A quantidade calculada de conectores é superior a 24."
+            case NUMERO_CONECTORES ->
+                    new DetalheFormula(
+                            "Nc = [Ptx - Srx - (α × L) - Ps - M] / Pc",
+                            "Nc = ["
+                                    + formatar(projeto.getPotenciaTransmissao())
+                                    + " - ("
+                                    + formatar(projeto.getSensibilidadeReceptor())
+                                    + ") - ("
+                                    + formatar(projeto.getAtenuacaoFibra())
+                                    + " × "
+                                    + formatar(projeto.getComprimentoFibra())
+                                    + ") - "
+                                    + formatar(projeto.getPerdaPorSplitter())
+                                    + " - "
+                                    + formatar(projeto.getMargemDeSeguranca())
+                                    + "] / "
+                                    + formatar(projeto.getPerdaPorConector())
                     );
-                }
-            }
 
-            case PERDA_POR_SPLITTER -> {
-                if (valor > 35) {
-                    alertas.add(
-                            "A perda calculada para os splitters é superior a 35 dB."
+            case PERDA_POR_SPLITTER ->
+                    new DetalheFormula(
+                            "Ps = Ptx - Srx - (α × L) - (Pc × Nc) - M",
+                            "Ps = "
+                                    + formatar(projeto.getPotenciaTransmissao())
+                                    + " - ("
+                                    + formatar(projeto.getSensibilidadeReceptor())
+                                    + ") - ("
+                                    + formatar(projeto.getAtenuacaoFibra())
+                                    + " × "
+                                    + formatar(projeto.getComprimentoFibra())
+                                    + ") - ("
+                                    + formatar(projeto.getPerdaPorConector())
+                                    + " × "
+                                    + projeto.getNumeroDeConectores()
+                                    + ") - "
+                                    + formatar(projeto.getMargemDeSeguranca())
                     );
-                }
-            }
 
-            case MARGEM_SEGURANCA -> {
-                if (valor < 2 || valor > 10) {
-                    alertas.add(
-                            "A margem calculada está fora da faixa "
-                                    + "convencional de 2 dB a 10 dB."
+            case MARGEM_SEGURANCA ->
+                    new DetalheFormula(
+                            "M = Ptx - Srx - (α × L) - (Pc × Nc) - Ps",
+                            "M = "
+                                    + formatar(projeto.getPotenciaTransmissao())
+                                    + " - ("
+                                    + formatar(projeto.getSensibilidadeReceptor())
+                                    + ") - ("
+                                    + formatar(projeto.getAtenuacaoFibra())
+                                    + " × "
+                                    + formatar(projeto.getComprimentoFibra())
+                                    + ") - ("
+                                    + formatar(projeto.getPerdaPorConector())
+                                    + " × "
+                                    + projeto.getNumeroDeConectores()
+                                    + ") - "
+                                    + formatar(projeto.getPerdaPorSplitter())
                     );
-                }
-            }
 
-            case NENHUM -> {
-                // Nenhuma ação necessária.
-            }
-        }
+            case NENHUM ->
+                    throw new IllegalArgumentException(
+                            "Nenhuma fórmula foi selecionada."
+                    );
+        };
+    }
+
+    private String formatar(double valor) {
+        return String.format(
+                LOCALE_BR,
+                "%.2f",
+                valor
+        );
+    }
+
+    private record DetalheFormula(
+            String formula,
+            String substituicao
+    ) {
     }
 }

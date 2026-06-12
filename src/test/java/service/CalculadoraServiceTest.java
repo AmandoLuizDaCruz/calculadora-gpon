@@ -45,6 +45,106 @@ class CalculadoraServiceTest {
                 resultado.getPerdasFisicas(),
                 0.001
         );
+
+        assertEquals(
+                -7.70,
+                resultado.getPotenciaRecebida(),
+                0.001
+        );
+
+        assertEquals(
+                20.30,
+                resultado.getMargemDisponivel(),
+                0.001
+        );
+
+        assertTrue(
+                resultado.getMensagem().contains("Fórmula")
+        );
+    }
+
+    @Test
+    void deveAnalisarProjetoCompletoInviavel() {
+        ProjetoPON projeto = criarProjetoValido();
+        projeto.setPotenciaTransmissao(-20.0);
+
+        ResultadoCalculo resultado =
+                service.analisar(projeto);
+
+        assertTrue(resultado.isSucesso());
+        assertFalse(resultado.isProjetoViavel());
+
+        assertTrue(
+                resultado.getMensagem()
+                        .contains("PROJETO INVIÁVEL")
+        );
+    }
+
+    @Test
+    void deveCalcularPotenciaDeTransmissao() {
+        ProjetoPON projeto = criarProjetoValido();
+        projeto.setPotenciaTransmissao(null);
+
+        ResultadoCalculo resultado =
+                service.analisar(projeto);
+
+        assertTrue(resultado.isSucesso());
+        assertTrue(resultado.isCalculouVariavel());
+
+        assertEquals(
+                ParametroCalculavel.POTENCIA_TRANSMISSAO,
+                resultado.getParametroCalculado()
+        );
+
+        assertEquals(
+                -12.30,
+                resultado.getValorCalculado(),
+                0.001
+        );
+    }
+
+    @Test
+    void deveCalcularSensibilidadeDoReceptor() {
+        ProjetoPON projeto = criarProjetoValido();
+        projeto.setSensibilidadeReceptor(null);
+
+        ResultadoCalculo resultado =
+                service.analisar(projeto);
+
+        assertTrue(resultado.isSucesso());
+
+        assertEquals(
+                ParametroCalculavel.SENSIBILIDADE_RECEPTOR,
+                resultado.getParametroCalculado()
+        );
+
+        assertEquals(
+                -10.70,
+                resultado.getValorCalculado(),
+                0.001
+        );
+    }
+
+    @Test
+    void deveCalcularAtenuacaoDaFibra() {
+        ProjetoPON projeto = criarProjetoValido();
+        projeto.setAtenuacaoFibra(null);
+
+        ResultadoCalculo resultado =
+                service.analisar(projeto);
+
+        assertTrue(resultado.isSucesso());
+
+        assertEquals(
+                ParametroCalculavel.ATENUACAO_FIBRA,
+                resultado.getParametroCalculado()
+        );
+
+        assertEquals(
+                2.08,
+                resultado.getValorCalculado(),
+                0.001
+        );
     }
 
     @Test
@@ -56,7 +156,6 @@ class CalculadoraServiceTest {
                 service.analisar(projeto);
 
         assertTrue(resultado.isSucesso());
-        assertTrue(resultado.isCalculouVariavel());
 
         assertEquals(
                 ParametroCalculavel.COMPRIMENTO_FIBRA,
@@ -71,9 +170,9 @@ class CalculadoraServiceTest {
     }
 
     @Test
-    void deveCalcularPotenciaDeTransmissao() {
+    void deveCalcularPerdaPorConector() {
         ProjetoPON projeto = criarProjetoValido();
-        projeto.setPotenciaTransmissao(null);
+        projeto.setPerdaPorConector(null);
 
         ResultadoCalculo resultado =
                 service.analisar(projeto);
@@ -81,12 +180,63 @@ class CalculadoraServiceTest {
         assertTrue(resultado.isSucesso());
 
         assertEquals(
-                ParametroCalculavel.POTENCIA_TRANSMISSAO,
+                ParametroCalculavel.PERDA_POR_CONECTOR,
                 resultado.getParametroCalculado()
         );
 
         assertEquals(
-                -12.30,
+                4.825,
+                resultado.getValorCalculado(),
+                0.001
+        );
+    }
+
+    @Test
+    void deveCalcularQuantidadeInteiraDeConectores() {
+        ProjetoPON projeto = criarProjetoValido();
+        projeto.setNumeroDeConectores(null);
+
+        ResultadoCalculo resultado =
+                service.analisar(projeto);
+
+        assertTrue(resultado.isSucesso());
+
+        assertEquals(
+                ParametroCalculavel.NUMERO_CONECTORES,
+                resultado.getParametroCalculado()
+        );
+
+        assertEquals(
+                38.0,
+                resultado.getValorCalculado(),
+                0.001
+        );
+
+        assertTrue(
+                resultado.getMensagem()
+                        .contains("Resultado matemático: 38,60")
+        );
+
+        assertFalse(resultado.getAlertas().isEmpty());
+    }
+
+    @Test
+    void deveCalcularPerdaDoSplitter() {
+        ProjetoPON projeto = criarProjetoValido();
+        projeto.setPerdaPorSplitter(null);
+
+        ResultadoCalculo resultado =
+                service.analisar(projeto);
+
+        assertTrue(resultado.isSucesso());
+
+        assertEquals(
+                ParametroCalculavel.PERDA_POR_SPLITTER,
+                resultado.getParametroCalculado()
+        );
+
+        assertEquals(
+                24.50,
                 resultado.getValorCalculado(),
                 0.001
         );
@@ -111,6 +261,28 @@ class CalculadoraServiceTest {
                 20.30,
                 resultado.getValorCalculado(),
                 0.001
+        );
+    }
+
+    @Test
+    void deveExibirFormulaESubstituicao() {
+        ProjetoPON projeto = criarProjetoValido();
+        projeto.setComprimentoFibra(null);
+
+        ResultadoCalculo resultado =
+                service.analisar(projeto);
+
+        assertTrue(
+                resultado.getMensagem().contains("Fórmula:")
+        );
+
+        assertTrue(
+                resultado.getMensagem().contains("Substituição:")
+        );
+
+        assertTrue(
+                resultado.getMensagem()
+                        .contains("L = [Ptx - Srx")
         );
     }
 
@@ -146,12 +318,12 @@ class CalculadoraServiceTest {
 
         assertTrue(
                 resultado.getMensagem()
-                        .contains("valor negativo")
+                        .contains("não pode ser negativo")
         );
     }
 
     @Test
-    void deveImpedirDivisaoPorZero() {
+    void deveImpedirDivisaoPorZeroAoCalcularAtenuacao() {
         ProjetoPON projeto = criarProjetoValido();
 
         projeto.setComprimentoFibra(0.0);

@@ -1,16 +1,18 @@
 package service;
 
+import model.LimitesPON;
+import model.ParametroCalculavel;
 import model.ProjetoPON;
 import model.ResultadoValidacao;
 
 /**
- * Responsável por validar os dados informados pelo usuário.
+ * Responsável pelas validações dos dados informados
+ * e dos valores calculados pelo sistema.
  */
 public class ValidacaoService {
 
     public ResultadoValidacao validar(ProjetoPON projeto) {
-        ResultadoValidacao resultado =
-                new ResultadoValidacao();
+        ResultadoValidacao resultado = new ResultadoValidacao();
 
         if (projeto == null) {
             resultado.adicionarErro(
@@ -20,10 +22,7 @@ public class ValidacaoService {
             return resultado;
         }
 
-        validarQuantidadeDeCamposVazios(
-                projeto,
-                resultado
-        );
+        validarQuantidadeDeCamposVazios(projeto, resultado);
 
         validarPotenciaTransmissao(
                 projeto.getPotenciaTransmissao(),
@@ -68,6 +67,72 @@ public class ValidacaoService {
         return resultado;
     }
 
+    /**
+     * Valida novamente um valor produzido pelo cálculo.
+     *
+     * Isso evita que o sistema aceite resultados negativos,
+     * infinitos ou fisicamente incompatíveis.
+     */
+    public ResultadoValidacao validarValorCalculado(
+            ParametroCalculavel parametro,
+            double valor
+    ) {
+        ResultadoValidacao resultado = new ResultadoValidacao();
+
+        if (parametro == null
+                || parametro == ParametroCalculavel.NENHUM) {
+            resultado.adicionarErro(
+                    "O parâmetro calculado não foi identificado."
+            );
+
+            return resultado;
+        }
+
+        if (!Double.isFinite(valor)) {
+            resultado.adicionarErro(
+                    "O resultado calculado não é um número válido."
+            );
+
+            return resultado;
+        }
+
+        switch (parametro) {
+            case POTENCIA_TRANSMISSAO ->
+                    validarPotenciaTransmissao(valor, resultado);
+
+            case SENSIBILIDADE_RECEPTOR ->
+                    validarSensibilidade(valor, resultado);
+
+            case ATENUACAO_FIBRA ->
+                    validarAtenuacao(valor, resultado);
+
+            case COMPRIMENTO_FIBRA ->
+                    validarComprimento(valor, resultado);
+
+            case PERDA_POR_CONECTOR ->
+                    validarPerdaConector(valor, resultado);
+
+            case NUMERO_CONECTORES ->
+                    validarQuantidadeCalculadaDeConectores(
+                            valor,
+                            resultado
+                    );
+
+            case PERDA_POR_SPLITTER ->
+                    validarPerdaSplitter(valor, resultado);
+
+            case MARGEM_SEGURANCA ->
+                    validarMargem(valor, resultado);
+
+            case NENHUM ->
+                    resultado.adicionarErro(
+                            "Nenhum parâmetro foi calculado."
+                    );
+        }
+
+        return resultado;
+    }
+
     private void validarQuantidadeDeCamposVazios(
             ProjetoPON projeto,
             ResultadoValidacao resultado
@@ -79,8 +144,8 @@ public class ValidacaoService {
             resultado.adicionarErro(
                     "Existem " + quantidadeAusentes
                             + " parâmetros vazios. "
-                            + "Preencha todos os campos e deixe "
-                            + "vazio somente o parâmetro que deseja calcular."
+                            + "Preencha todos os campos e deixe vazio "
+                            + "somente o parâmetro que deseja calcular."
             );
         }
     }
@@ -101,14 +166,25 @@ public class ValidacaoService {
             return;
         }
 
-        if (valor < -50 || valor > 50) {
+        if (valor < LimitesPON.POTENCIA_TX_MIN_FISICA
+                || valor > LimitesPON.POTENCIA_TX_MAX_FISICA) {
             resultado.adicionarErro(
-                    "A potência de transmissão está fora dos limites físicos aceitos."
+                    "A potência de transmissão está fora dos limites "
+                            + "físicos adotados pelo projeto."
             );
-        } else if (valor < -10 || valor > 10) {
+
+            return;
+        }
+
+        if (valor < LimitesPON.POTENCIA_TX_MIN_CONVENCIONAL
+                || valor > LimitesPON.POTENCIA_TX_MAX_CONVENCIONAL) {
             resultado.adicionarAlerta(
-                    "A potência de transmissão informada está fora "
-                            + "da faixa convencional de -10 dBm a 10 dBm."
+                    "A potência de transmissão está fora da faixa "
+                            + "convencional adotada de "
+                            + LimitesPON.POTENCIA_TX_MIN_CONVENCIONAL
+                            + " dBm a "
+                            + LimitesPON.POTENCIA_TX_MAX_CONVENCIONAL
+                            + " dBm."
             );
         }
     }
@@ -129,14 +205,25 @@ public class ValidacaoService {
             return;
         }
 
-        if (valor < -60 || valor > 10) {
+        if (valor < LimitesPON.SENSIBILIDADE_MIN_FISICA
+                || valor > LimitesPON.SENSIBILIDADE_MAX_FISICA) {
             resultado.adicionarErro(
-                    "A sensibilidade do receptor está fora dos limites físicos aceitos."
+                    "A sensibilidade do receptor está fora dos limites "
+                            + "físicos adotados pelo projeto."
             );
-        } else if (valor < -40 || valor > -10) {
+
+            return;
+        }
+
+        if (valor < LimitesPON.SENSIBILIDADE_MIN_CONVENCIONAL
+                || valor > LimitesPON.SENSIBILIDADE_MAX_CONVENCIONAL) {
             resultado.adicionarAlerta(
-                    "A sensibilidade informada está fora da faixa "
-                            + "convencional de -40 dBm a -10 dBm."
+                    "A sensibilidade do receptor está fora da faixa "
+                            + "convencional adotada de "
+                            + LimitesPON.SENSIBILIDADE_MIN_CONVENCIONAL
+                            + " dBm a "
+                            + LimitesPON.SENSIBILIDADE_MAX_CONVENCIONAL
+                            + " dBm."
             );
         }
     }
@@ -157,10 +244,15 @@ public class ValidacaoService {
             return;
         }
 
-        if (valor < 0.1 || valor > 1.0) {
+        if (valor < LimitesPON.ATENUACAO_MIN_CONVENCIONAL
+                || valor > LimitesPON.ATENUACAO_MAX_CONVENCIONAL) {
             resultado.adicionarAlerta(
                     "A atenuação da fibra está fora da faixa "
-                            + "convencional de 0,1 dB/km a 1,0 dB/km."
+                            + "convencional adotada de "
+                            + LimitesPON.ATENUACAO_MIN_CONVENCIONAL
+                            + " dB/km a "
+                            + LimitesPON.ATENUACAO_MAX_CONVENCIONAL
+                            + " dB/km."
             );
         }
     }
@@ -181,10 +273,12 @@ public class ValidacaoService {
             return;
         }
 
-        if (valor > 60) {
+        if (valor > LimitesPON.COMPRIMENTO_MAX_CONVENCIONAL) {
             resultado.adicionarAlerta(
-                    "O comprimento da fibra é superior a 60 km "
-                            + "e deve ser analisado cuidadosamente."
+                    "O comprimento da fibra é superior ao limite "
+                            + "convencional adotado de "
+                            + LimitesPON.COMPRIMENTO_MAX_CONVENCIONAL
+                            + " km."
             );
         }
     }
@@ -205,9 +299,12 @@ public class ValidacaoService {
             return;
         }
 
-        if (valor > 2) {
+        if (valor > LimitesPON.PERDA_CONECTOR_MAX_CONVENCIONAL) {
             resultado.adicionarAlerta(
-                    "A perda por conector está acima de 2 dB."
+                    "A perda por conector é superior ao limite "
+                            + "convencional adotado de "
+                            + LimitesPON.PERDA_CONECTOR_MAX_CONVENCIONAL
+                            + " dB."
             );
         }
     }
@@ -228,11 +325,53 @@ public class ValidacaoService {
             return;
         }
 
-        if (valor > 24) {
+        if (valor > LimitesPON.NUMERO_CONECTORES_MAX_CONVENCIONAL) {
             resultado.adicionarAlerta(
-                    "A quantidade de conectores é superior a 24."
+                    "A quantidade de conectores é superior ao limite "
+                            + "convencional adotado de "
+                            + LimitesPON.NUMERO_CONECTORES_MAX_CONVENCIONAL
+                            + " conectores."
             );
         }
+    }
+
+    private void validarQuantidadeCalculadaDeConectores(
+            double valor,
+            ResultadoValidacao resultado
+    ) {
+        if (!Double.isFinite(valor) || valor < 0) {
+            resultado.adicionarErro(
+                    "A quantidade calculada de conectores "
+                            + "não pode ser negativa."
+            );
+
+            return;
+        }
+
+        if (valor > Integer.MAX_VALUE) {
+            resultado.adicionarErro(
+                    "A quantidade calculada de conectores é excessivamente alta."
+            );
+
+            return;
+        }
+
+        if (!LimitesPON.aproximadamenteInteiro(valor)) {
+            resultado.adicionarAlerta(
+                    "A quantidade matemática de conectores não é inteira. "
+                            + "Será considerada a quantidade máxima inteira "
+                            + "que não ultrapassa o orçamento óptico."
+            );
+        }
+
+        int quantidadeInteira = (int) Math.floor(
+                valor + LimitesPON.EPSILON
+        );
+
+        validarQuantidadeConectores(
+                quantidadeInteira,
+                resultado
+        );
     }
 
     private void validarPerdaSplitter(
@@ -251,9 +390,12 @@ public class ValidacaoService {
             return;
         }
 
-        if (valor > 35) {
+        if (valor > LimitesPON.PERDA_SPLITTER_MAX_CONVENCIONAL) {
             resultado.adicionarAlerta(
-                    "A perda informada para os splitters é superior a 35 dB."
+                    "A perda dos splitters é superior ao limite "
+                            + "convencional adotado de "
+                            + LimitesPON.PERDA_SPLITTER_MAX_CONVENCIONAL
+                            + " dB."
             );
         }
     }
@@ -274,11 +416,16 @@ public class ValidacaoService {
             return;
         }
 
-        if (valor < 2 || valor > 10) {
+        if (valor < LimitesPON.MARGEM_MIN_CONVENCIONAL
+                || valor > LimitesPON.MARGEM_MAX_CONVENCIONAL) {
             resultado.adicionarAlerta(
                     "A margem de segurança está fora da faixa "
-                            + "convencional de 2 dB a 10 dB."
+                            + "convencional adotada de "
+                            + LimitesPON.MARGEM_MIN_CONVENCIONAL
+                            + " dB a "
+                            + LimitesPON.MARGEM_MAX_CONVENCIONAL
+                            + " dB."
             );
         }
     }
-}
+}  
