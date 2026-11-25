@@ -1,4 +1,9 @@
-# Calculadora GPON
+# 📡 Calculadora GPON — Orçamento de Potência em Redes Ópticas PON
+
+![Java](https://img.shields.io/badge/Java-17-ED8B00?logo=openjdk&logoColor=white)
+![JavaFX](https://img.shields.io/badge/JavaFX-17-blue?logo=openjdk&logoColor=white)
+![Maven](https://img.shields.io/badge/Build-Maven-C71A36?logo=apachemaven&logoColor=white)
+![JUnit 5](https://img.shields.io/badge/JUnit_5-26_Testes_Aprovados-25A162?logo=junit5&logoColor=white)
 
 Aplicação desktop desenvolvida em Java para calcular o orçamento óptico de uma rede GPON/PON, validar os parâmetros informados e verificar a viabilidade do enlace.
 
@@ -102,9 +107,9 @@ service
 ```text
 calculadora-gpon/
 ├── docs/
-│   ├── diagramaDeClasse.png
-│   ├── diagramaDeUso.png
-│   └── documentoDeRequisitos.pdf
+│   ├── Diagrama-de-classes-Calculadora-GPON.png
+│   ├── Diagrama-de-casos-de-uso-GPON.png
+│   └── Documento_de_Requisitos_Calculadora_GPON.pdf
 ├── src/
 │   ├── main/
 │   │   ├── java/
@@ -251,13 +256,19 @@ O projeto possui 26 testes automatizados, distribuídos entre:
 - divisões por zero;
 - quantidade fracionária de conectores.
 
-## Documentação
+## Documentação e Diagramas UML (`docs/`)
 
-A pasta `docs/` contém:
+A pasta `docs/` contém todos os artefatos de Engenharia de Software do projeto:
 
-- documento de requisitos;
-- diagrama de classes;
-- diagrama de casos de uso.
+- 📄 **[Documento de Requisitos (PDF)](./docs/Documento_de_Requisitos_Calculadora_GPON.pdf)**
+- 📐 **[Diagrama de Classes (PNG)](./docs/Diagrama-de-classes-Calculadora-GPON.png)**
+- 🧩 **[Diagrama de Casos de Uso (PNG)](./docs/Diagrama-de-casos-de-uso-GPON.png)**
+
+### Diagrama de Classes
+![Diagrama de Classes Calculadora GPON](./docs/Diagrama-de-classes-Calculadora-GPON.png)
+
+### Diagrama de Casos de Uso
+![Diagrama de Casos de Uso Calculadora GPON](./docs/Diagrama-de-casos-de-uso-GPON.png)
 
 ## Limitações
 
